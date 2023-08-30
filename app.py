@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from flask import Flask, jsonify
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 app = Flask(__name__)
 
@@ -12,7 +12,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///project.db"
 # initialize the app with the extension
 db.init_app(app)
 
-# create models
+"""create models"""
 
 
 @dataclass
@@ -32,13 +32,17 @@ def create_db():
         db.create_all()
     return 'create db'
 
-# CRUD : Create, Read, Update, Delete
+
+"""
+Endpoints
+CRUD : Create, Read, Update, Delete
+"""
 
 
-@app.route('/todos', methods=['GET'])  # endpoint
+@app.route('/todos', methods=['GET'])
 def get_all_todos():
     todoList = Todo.query.all()
-    return jsonify(todoList)
+    return todoList
 
 
 @app.route('/todos/<todo_id>', methods=['GET'])
