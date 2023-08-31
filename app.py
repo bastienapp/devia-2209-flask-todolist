@@ -1,8 +1,13 @@
 from dataclasses import dataclass
-from flask import Flask, jsonify, request
+import datetime
+from flask import Flask, abort, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
+import jwt
 app = Flask(__name__)
+
+secret_key = 'secretsecretsecretsecretsecret'
+#  app.config['SECRET_KEY'] = 'secretsecretsecretsecretsecret'
 
 # create the extension
 db = SQLAlchemy()
@@ -47,6 +52,35 @@ def create_db():
     return 'create db'
 
 
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    # find user with email
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        abort(401)
+    if bcrypt.check_password_hash(user.password, password):
+
+        encoded = jwt.encode(
+            {
+                'user_id': user.id,
+                'email': user.email,
+                'iat':  datetime.datetime.utcnow(),
+                'exp': datetime.datetime.utcnow()
+                + datetime.timedelta(minutes=30)
+            },
+            secret_key,
+            "HS256"
+        )
+
+        return jsonify({'token': encoded})
+    else:
+        abort(401)
+
+
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -59,7 +93,7 @@ def register():
     db.session.add(new_user)
     db.session.commit()
 
-    # todo try execpt for duplicate email
+    # todo try except for duplicate email
 
     return jsonify(new_user), 201
 
@@ -87,6 +121,20 @@ def get_todo_by_id(todo_id):
 
 @app.route('/todos', methods=['POST'])
 def create_todo():
+    # todo create decorator for jwt check
+    # check jwt : user needs to be logged in
+    auth_header = request.headers.get('Authorization')
+    if auth_header is None:
+        abort(403)
+    token = auth_header.split(' ')[1]  # "Bearer <token>"
+    if token is None:
+        abort(403)
+    try:
+        jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.exceptions.DecodeError:
+        abort(403)
+
+    # here user is logged in
     data = request.get_json()
     title = data.get('title')  # request.form['title']
     done = data.get('done')  # request.form['done']
