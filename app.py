@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from flask import Flask
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 app = Flask(__name__)
 
@@ -15,7 +15,7 @@ db.init_app(app)
 """create models"""
 
 
-@dataclass
+@dataclass  # model is serializable
 class Todo(db.Model):
     id: int
     title: str
@@ -41,28 +41,61 @@ CRUD : Create, Read, Update, Delete
 
 @app.route('/todos', methods=['GET'])
 def get_all_todos():
-    todoList = Todo.query.all()
-    return todoList
+    todo_list = Todo.query.all()
+    return todo_list
 
 
-@app.route('/todos/<todo_id>', methods=['GET'])
+@app.route('/todos/<int:todo_id>', methods=['GET'])
 def get_todo_by_id(todo_id):
-    return 'GET TODO item by id : ' + todo_id
+    todo_item = Todo.query.filter_by(id=todo_id).first()
+    if not todo_item:
+        return jsonify({'message': 'No todo item found with id '
+                        + str(todo_id)}), 404
+    return jsonify(todo_item)
 
 
 @app.route('/todos', methods=['POST'])
 def create_todo():
-    return 'Create a TODO item!'
+    data = request.get_json()
+    title = data.get('title')  # request.form['title']
+    done = data.get('done')  # request.form['done']
+
+    new_todo = Todo(title=title, done=done)
+    db.session.add(new_todo)
+    db.session.commit()
+
+    return jsonify(new_todo), 201
 
 
-@app.route('/todos/<todo_id>', methods=['PUT'])
+@app.route('/todos/<int:todo_id>', methods=['PUT'])
 def update_todo(todo_id):
-    return 'Update a TODO item : ' + todo_id
+    todo_item = Todo.query.filter_by(id=todo_id).first()
+    if not todo_item:
+        return jsonify({'message': 'No todo item found with id '
+                        + str(todo_id)}), 404
+    data = request.get_json()
+    # update todo_item
+    if data.get('title') is not None:
+        todo_item.title = data.get('title')
+    if data.get('done') is not None:
+        todo_item.done = data.get('done')
+
+    db.session.commit()
+
+    return jsonify(todo_item)
 
 
-@app.route('/todos/<todo_id>', methods=['DELETE'])
+@app.route('/todos/<int:todo_id>', methods=['DELETE'])
 def delete_todo(todo_id):
-    return 'Delete a TODO item : ' + todo_id
+    todo_item = Todo.query.filter_by(id=todo_id).first()
+    if not todo_item:
+        return jsonify({'message': 'No todo item found with id '
+                        + str(todo_id)}), 404
+    # remove todo_item from database
+    db.session.delete(todo_item)
+    db.session.commit()
+
+    return jsonify({'message': 'Todo item deleted successfully'})
 
 
 if __name__ == '__main__':
