@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
 app = Flask(__name__)
 
 # create the extension
 db = SQLAlchemy()
 # create the app
 app = Flask(__name__)
+bcrypt = Bcrypt(app)
 # configure the SQLite database, relative to the app instance folder
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///project.db"
 # initialize the app with the extension
@@ -26,11 +28,40 @@ class Todo(db.Model):
     done = db.Column(db.Boolean)
 
 
+@dataclass
+class User(db.Model):
+    id: int
+    email: str
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True)
+    password = db.Column(db.String(255))
+    #  todos = db.relationship('Todo', backref='user', lazy=True)
+
+
 @app.route('/create-db')
 def create_db():
     with app.app_context():
+        #  db.drop_all()
         db.create_all()
     return 'create db'
+
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+    #  hash password
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    new_user = User(email=email, password=hashed_password)
+    db.session.add(new_user)
+    db.session.commit()
+
+    # todo try execpt for duplicate email
+
+    return jsonify(new_user), 201
 
 
 """
