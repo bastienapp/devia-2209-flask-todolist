@@ -9,6 +9,9 @@ app = Flask(__name__)
 secret_key = 'secretsecretsecretsecretsecret'
 #  app.config['SECRET_KEY'] = 'secretsecretsecretsecretsecret'
 
+ROLE_ADMIN = 1
+ROLE_USER = 2
+
 # create the extension
 db = SQLAlchemy()
 # create the app
@@ -27,10 +30,12 @@ class Todo(db.Model):
     id: int
     title: str
     done: bool
+    user_id: int
 
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255))
     done = db.Column(db.Boolean)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 
 @dataclass
@@ -41,14 +46,36 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(255), unique=True)
     password = db.Column(db.String(255))
-    #  todos = db.relationship('Todo', backref='user', lazy=True)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'),
+                        nullable=False)
+
+
+@dataclass
+class Role(db.Model):
+    id: int
+    name: str
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), unique=True)
 
 
 @app.route('/create-db')
 def create_db():
     with app.app_context():
-        #  db.drop_all()
+        db.drop_all()
         db.create_all()
+
+        role_admin = Role(name='admin')
+        db.session.add(role_admin)
+        role_user = Role(name='user')
+        db.session.add(role_user)
+
+        admin = User(email='admin@simplon.co',
+                     password=bcrypt.generate_password_hash('admin')
+                     .decode('utf-8'), role_id=ROLE_ADMIN)
+        db.session.add(admin)
+
+        db.session.commit()
     return 'create db'
 
 
@@ -89,7 +116,7 @@ def register():
     #  hash password
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
-    new_user = User(email=email, password=hashed_password)
+    new_user = User(email=email, password=hashed_password, role_id=ROLE_USER)
     db.session.add(new_user)
     db.session.commit()
 
@@ -119,9 +146,7 @@ def get_todo_by_id(todo_id):
     return jsonify(todo_item)
 
 
-@app.route('/todos', methods=['POST'])
-def create_todo():
-    # todo create decorator for jwt check
+def jwt_required():
     # check jwt : user needs to be logged in
     auth_header = request.headers.get('Authorization')
     if auth_header is None:
@@ -130,16 +155,26 @@ def create_todo():
     if token is None:
         abort(403)
     try:
-        jwt.decode(token, secret_key, algorithms=["HS256"])
+        jwt_decoded = jwt.decode(token, secret_key, algorithms=["HS256"])
+        # retrieve user from database with email
+        user = User.query.filter_by(email=jwt_decoded['email']).first()
+        if user is None:
+            abort(403)
+        return user
     except jwt.exceptions.DecodeError:
         abort(403)
+
+
+@app.route('/todos', methods=['POST'])
+def create_todo():
+    current_user = jwt_required()
 
     # here user is logged in
     data = request.get_json()
     title = data.get('title')  # request.form['title']
     done = data.get('done')  # request.form['done']
 
-    new_todo = Todo(title=title, done=done)
+    new_todo = Todo(title=title, done=done, user_id=current_user.id)
     db.session.add(new_todo)
     db.session.commit()
 
@@ -166,6 +201,11 @@ def update_todo(todo_id):
 
 @app.route('/todos/<int:todo_id>', methods=['DELETE'])
 def delete_todo(todo_id):
+    current_user = jwt_required()
+
+    if current_user.role_id != ROLE_ADMIN:
+        abort(403)
+
     todo_item = Todo.query.filter_by(id=todo_id).first()
     if not todo_item:
         return jsonify({'message': 'No todo item found with id '
